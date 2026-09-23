@@ -56,3 +56,4 @@ The Prisma schema includes employees, multiple revocable passkeys, attendance ev
 npm run db:validate
 npm run build
 ```
+# attendance
