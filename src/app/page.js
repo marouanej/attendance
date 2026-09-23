@@ -1,69 +1,143 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Image from "next/image";
+import QRCode from "qrcode";
 
 export default function Home() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginChecked, setLoginChecked] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const [agents, setAgents] = useState([]);
+  const [attendance, setAttendance] = useState([]);
+  const [importMessage, setImportMessage] = useState("");
+  const [qrDataUrl, setQrDataUrl] = useState("");
+  const checkInUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/checkin`;
+  useEffect(() => {
+    QRCode.toDataURL(checkInUrl, { width: 320, margin: 4, errorCorrectionLevel: "H", color: { dark: "#242431", light: "#ffffff" } })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(""));
+    const refresh = () => {
+      setAgents(JSON.parse(window.localStorage.getItem("attendance-agents") || "[]"));
+      setAttendance(JSON.parse(window.localStorage.getItem("attendance-events") || "[]"));
+    };
+    window.setTimeout(refresh, 0);
+    window.addEventListener("storage", refresh);
+    return () => window.removeEventListener("storage", refresh);
+  }, [checkInUrl]);
+
+  useEffect(() => {
+    const restoreAdminSession = () => {
+      setIsAuthenticated(window.localStorage.getItem("attendance-admin-auth") === "true");
+      setLoginChecked(true);
+    };
+    window.setTimeout(restoreAdminSession, 0);
+  }, []);
+
+  const attendanceRows = agents.map((agent) => {
+    const event = attendance.find((item) => item.agentId === agent.id && new Date(item.timestamp).toDateString() === new Date().toDateString());
+    const checkIn = event ? new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-";
+    return { ...agent, checkIn, checkOut: "-", status: event ? "Present" : "Not arrived", tone: event ? "green" : "gray", initials: agent.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() };
+  });
+
+  function importAgents(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const lines = String(reader.result).split(/\r?\n/).filter(Boolean);
+      const headers = lines.shift().split(",").map((header) => header.trim().toLowerCase());
+      const nameIndex = headers.findIndex((header) => ["name", "full name", "agent name"].includes(header));
+      if (nameIndex < 0) { setImportMessage("CSV must include a Name column."); return; }
+      const imported = lines.map((line, index) => {
+        const values = line.split(",").map((value) => value.trim().replace(/^"|"$/g, ""));
+        return { id: values[headers.indexOf("id")] || `agent-${Date.now()}-${index}`, name: values[nameIndex], team: values[headers.indexOf("department")] || values[headers.indexOf("team")] || "", active: true };
+      }).filter((agent) => agent.name);
+      window.localStorage.setItem("attendance-agents", JSON.stringify(imported));
+      setAgents(imported);
+      setImportMessage(`${imported.length} agent${imported.length === 1 ? "" : "s"} imported.`);
+    };
+    reader.readAsText(file);
+    event.target.value = "";
+  }
+
+  function exportCsv() {
+    const csv = ["Agent,Department,Check in,Check out,Status,GPS accuracy", ...attendanceRows.map((row) => `${row.name},${row.team},${row.checkIn},${row.checkOut},${row.status},${attendance.find((event) => event.agentId === row.id)?.accuracy || ""}`)].join("\n");
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    link.download = `attendance-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    setShowToast(true);
+    window.setTimeout(() => setShowToast(false), 2800);
+  }
+
+  async function login(event) {
+    event.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError("");
+    const response = await fetch("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      setLoginError(result.error || "Unable to sign in.");
+      setIsLoggingIn(false);
+      return;
+    }
+    window.localStorage.setItem("attendance-admin-auth", "true");
+    setIsAuthenticated(true);
+    setIsLoggingIn(false);
+  }
+
+  function printQr() {
+    if (!qrDataUrl) return;
+    const printWindow = window.open("", "attendance-qr-print", "width=800,height=900");
+    if (!printWindow) {
+      setShowToast(true);
+      window.setTimeout(() => setShowToast(false), 2800);
+      return;
+    }
+    const safeUrl = checkInUrl.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+    printWindow.document.write(`<!doctype html><html><head><title>Office check-in QR code</title><style>html,body{margin:0;min-height:100%;font-family:Arial,sans-serif}body{display:flex;min-height:100vh;align-items:center;justify-content:center}.sheet{text-align:center}.sheet img{display:block;width:180mm;height:180mm;image-rendering:pixelated}.sheet p{font-size:12pt;margin:18px 0 0}@media print{.sheet img{width:180mm;height:180mm}}</style></head><body><main class="sheet"><img src="${qrDataUrl}" alt="Office check-in QR code"><p>${safeUrl}</p></main></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.onload = () => {
+      printWindow.print();
+      printWindow.onafterprint = () => printWindow.close();
+    };
+  }
+
+  if (!loginChecked) return null;
+  if (!isAuthenticated) return <main className="admin-login"><form className="login-card" onSubmit={login}><div className="checkin-brand login-brand"><span>◎</span> presence<span>.</span></div><div className="checkin-kicker">ADMINISTRATION</div><h1>Sign in to your workspace.</h1><p className="checkin-copy">Use the administrator username and password configured for this deployment.</p><label className="checkin-label" htmlFor="admin-username">Username</label><input className="checkin-input" id="admin-username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /><label className="checkin-label login-password-label" htmlFor="admin-password">Password</label><input className="checkin-input" id="admin-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />{loginError && <div className="notice notice-error">{loginError}</div>}<button className="checkin-button" disabled={isLoggingIn}>{isLoggingIn ? "Signing in..." : "Sign in"}<span>→</span></button></form></main>;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+    <div className="app-shell">
+      <main className="main-content">
+        <header className="topbar simple-topbar"><div className="brand"><span className="brand-mark">◎</span><span>presence<span className="brand-dot">.</span></span></div><span className="admin-label">ADMIN PANEL</span></header>
+
+        <div className="content-wrap">
+          <section className="page-heading"><div><p className="eyebrow" suppressHydrationWarning>{new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }).toUpperCase()}</p><h1>Attendance</h1><p className="subheading">Import agents and review verified arrivals.</p></div><div className="heading-actions"><button className="button button-secondary" onClick={exportCsv} disabled={!attendanceRows.length}><span>↓</span> Export CSV</button><label className="button button-primary file-button"><span>↑</span> Import CSV<input type="file" accept=".csv,text/csv" onChange={importAgents} /></label></div></section>
+
+          {importMessage && <div className="import-message">{importMessage}</div>}
+
+          <section className="stats-grid" aria-label="Attendance summary">
+            <div className="stat-card"><div className="stat-top"><span>Arrived today</span><span className="stat-icon green-icon">✓</span></div><strong>{attendanceRows.filter((row) => row.status === "Present").length}<span className="stat-denom"> / {agents.length}</span></strong><div className="stat-foot">Recorded from verified scans</div></div>
+            <div className="stat-card"><div className="stat-top"><span>Agents imported</span><span className="stat-icon blue-icon">♙</span></div><strong>{agents.length}</strong><div className="stat-foot">Registered in workspace</div></div>
+            <div className="stat-card"><div className="stat-top"><span>Waiting to arrive</span><span className="stat-icon orange-icon">◷</span></div><strong>{agents.length - attendanceRows.filter((row) => row.status === "Present").length}</strong><div className="stat-foot">No arrival recorded yet</div></div>
+            <div className="stat-card"><div className="stat-top"><span>GPS verified</span><span className="stat-icon violet-icon">↗</span></div><strong>{attendance.length ? "100" : "0"}<span className="percent">%</span></strong><div className="stat-foot">Server-side location check</div></div>
+          </section>
+
+          <div className="dashboard-grid">
+            <section className="panel attendance-panel"><div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan.</p></div></div><div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div><div className="table-scroll"><table><thead><tr><th>AGENT</th><th>ARRIVED</th><th>GPS</th><th>STATUS</th></tr></thead><tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.name}><td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td><td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td><td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.checkIn === "-" ? "-" : `${attendance.find((event) => event.agentId === row.id)?.accuracy || ""}m accuracy`}</td><td><span className={`status-pill ${row.tone}`}>{row.status}</span></td></tr>) : <tr><td colSpan="4" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody></table></div></section>
+
+            <section className="panel qr-panel"><div className="panel-header"><div><h2>Office QR code</h2><p>Permanent check-in link</p></div></div><div className="qr-content"><div className="qr-code" aria-label="Permanent office check-in QR code">{qrDataUrl ? <Image src={qrDataUrl} alt="Scan to open office check-in" width={320} height={320} unoptimized /> : <span className="qr-loading">Generating QR...</span>}</div><p>Agents scan this code to open<br /><strong>the attendance page</strong></p><span className="qr-url">{checkInUrl}</span></div><button className="print-button" onClick={printQr} disabled={!qrDataUrl}><span>▣</span> Print QR code</button><p className="qr-footnote">This QR code does not change.</p></section>
+          </div>
         </div>
       </main>
+      {showToast && <div className="toast">Attendance CSV exported successfully <span>✓</span></div>}
     </div>
   );
 }

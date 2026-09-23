@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  EMPLOYEE
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+enum VerificationStatus {
+  VERIFIED
+  REJECTED
+}
+
+enum NetworkVerificationMode {
+  GPS_ONLY
+  GPS_PLUS_LOCAL_NETWORK
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String?
+  role         Role     @default(EMPLOYEE)
+  employee     Employee?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Employee {
+  id             String               @id @default(cuid())
+  employeeNumber String               @unique
+  firstName      String
+  lastName       String
+  email          String               @unique
+  department     String?
+  position       String?
+  active         Boolean              @default(true)
+  user           User                 @relation(fields: [userId], references: [id])
+  userId         String               @unique
+  passkeys       PasskeyCredential[]
+  attendance     Attendance[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+}
+
+model PasskeyCredential {
+  id         String    @id @default(cuid())
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId String
+  credentialId String  @unique
+  publicKey  Bytes
+  counter    BigInt    @default(0)
+  transports String[]
+  deviceName String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([employeeId, revokedAt])
+}
+
+model Attendance {
+  id                   String             @id @default(cuid())
+  employee             Employee           @relation(fields: [employeeId], references: [id])
+  employeeId           String
+  eventType            AttendanceEventType
+  timestamp            DateTime           @default(now())
+  latitude             Decimal            @db.Decimal(10, 7)
+  longitude            Decimal            @db.Decimal(10, 7)
+  gpsAccuracy          Decimal            @db.Decimal(8, 2)
+  distanceFromOffice   Decimal            @db.Decimal(10, 2)
+  authenticationMethod String
+  verificationStatus   VerificationStatus
+  networkVerified     Boolean             @default(false)
+  credentialId        String?
+  metadata             Json?
+  createdAt            DateTime            @default(now())
+
+  @@index([employeeId, timestamp])
+  @@index([timestamp, eventType])
+  @@unique([employeeId, eventType, timestamp])
+}
+
+model OfficeSettings {
+  id                    String                 @id @default(cuid())
+  name                  String
+  latitude              Decimal                @db.Decimal(10, 7)
+  longitude             Decimal                @db.Decimal(10, 7)
+  geofenceRadius        Int
+  maxGpsAccuracy        Int                    @default(100)
+  networkVerificationMode NetworkVerificationMode @default(GPS_ONLY)
+  localVerifierUrl      String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  event      String
+  severity   String   @default("INFO")
+  actorUserId String?
+  employeeId String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([employeeId, createdAt])
+}
