@@ -19,7 +19,7 @@ When an agent scans the permanent QR code:
 4. The agent remains inactive until an administrator verifies their identity in person and approves the enrollment. Enrollment does not request location.
 5. On attendance check-in, the approved agent authenticates with their passkey and sends precise GPS coordinates. The server enforces the configured office geofence and accuracy limit, then records the time, location, and distance from the office in PostgreSQL.
 
-The admin dashboard lets administrators edit an agent's name and department, or remove them from the active roster while preserving their attendance history. A scrollable status selector for non-arrivals offers **Permission**, **Recuperation**, or **Absent**. Permission and recuperation are set through a calendar date and expire at the end of that date in Casablanca time. The scheduled job carries active leave forward by Casablanca calendar day. From 10:00 Casablanca time, agents with no check-in and no active leave are marked absent. At 18:00, that day's attendance rows are permanently deleted, and check-in closes until the next day.
+The admin dashboard lets administrators edit an agent's name and department, or remove them from the active roster while preserving their attendance history. A scrollable status selector for non-arrivals offers **Permission**, **Recuperation**, or **Absent**. Permission and recuperation are set through a calendar date and expire at the end of that date in Casablanca time. These statuses are stored by Casablanca calendar day. Automatic 10:00 absence marking and 18:00 attendance cleanup are disabled. Admins can manually delete one check-in or clear all of today's attendance from the dashboard; these actions preserve agent profiles and leave statuses.
 
 CSV imports, pending approvals, passkeys, and server-backed attendance use PostgreSQL. The browser may still contain older demo data in local storage; it is not used to authenticate server-backed agents. Configure a reachable PostgreSQL database before using enrollment or attendance.
 
@@ -39,7 +39,7 @@ A normal mobile browser cannot reliably read the connected Wi-Fi SSID or MAC add
 
 Set `DATABASE_URL` in Vercel's project environment variables to a reachable PostgreSQL connection string before deploying. Vercel runs `vercel-build`, which applies checked-in migrations with `prisma migrate deploy`, generates Prisma Client, and builds the app. The initial migration creates all tables in an empty database. For manual deployment, run `npm run db:deploy` with the production `DATABASE_URL` configured. Never run `prisma migrate dev` against production.
 
-Set a strong random `CRON_SECRET` in Vercel's project environment variables so the scheduled attendance endpoint only accepts authenticated Vercel Cron requests. The hourly cron checks `Africa/Casablanca` local time, including seasonal timezone changes. Vercel Hobby allows only one cron invocation per day and cannot support both requested cutoffs; use a plan that permits hourly cron schedules or configure an external scheduler to call the endpoint hourly.
+No Vercel Cron schedule is configured. Daily automatic absence marking and attendance cleanup will not run until an external scheduler is configured and authorized with `CRON_SECRET`.
 
 WebAuthn requires HTTPS in production. `localhost` is permitted for local development. `NEXT_PUBLIC_APP_URL`, `WEBAUTHN_ORIGIN`, and `WEBAUTHN_RP_ID` must match the production HTTPS origin.
 
@@ -56,7 +56,7 @@ The Prisma schema includes employees, multiple revocable passkeys, attendance ev
 - Add rate limiting to passkey, registration, and attendance endpoints.
 - Protect admin mutations with server-side role checks and audit them.
 - Configure `AUTH_SECRET`, admin credentials, and a production PostgreSQL URL as deployment secrets; rotate any values that have been exposed.
-- Attendance rows are deleted at 18:00 Casablanca time by design. Export required reports before the cutoff; deleted attendance history cannot be recovered.
+- Automatic attendance deletion is disabled until an external scheduler is configured.
 - Run `npm run db:validate` and `npm run build` in CI.
 - Deploy the local verifier inside the office network; do not expose it publicly.
 - Configure backups, log redaction, and a location-data retention schedule.

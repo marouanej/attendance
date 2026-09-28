@@ -1,9 +1,3 @@
 {
-  "buildCommand": "npm run vercel-build",
-  "crons": [
-    {
-      "path": "/api/cron/attendance-daily",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "buildCommand": "npm run vercel-build"
 }

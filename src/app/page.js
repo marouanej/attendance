@@ -17,6 +17,7 @@ export default function Home() {
   const [pendingEnrollments, setPendingEnrollments] = useState([]);
   const [importMessage, setImportMessage] = useState("");
   const [savingStatuses, setSavingStatuses] = useState({});
+  const [isDeletingAttendance, setIsDeletingAttendance] = useState(false);
   const [enrollmentCodes, setEnrollmentCodes] = useState({});
   const [statusDrafts, setStatusDrafts] = useState({});
   const [today, setToday] = useState("");
@@ -207,6 +208,35 @@ export default function Home() {
     }
   }
 
+  async function deleteAttendance(eventId, agentName) {
+    const message = eventId
+      ? `Delete ${agentName}'s check-in for today? The agent profile will remain active.`
+      : "Delete every attendance record for today? Agent profiles and leave statuses will remain.";
+    if (!window.confirm(message)) return;
+    setIsDeletingAttendance(true);
+    try {
+      const response = await fetch("/api/admin/attendance", {
+        method: "DELETE",
+        headers: eventId ? { "content-type": "application/json" } : undefined,
+        body: eventId ? JSON.stringify({ eventId }) : undefined,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to delete attendance data.");
+      const refreshResponse = await fetch("/api/admin/attendance", { cache: "no-store" });
+      if (refreshResponse.ok) {
+        const refreshed = await refreshResponse.json();
+        setToday(refreshed.day);
+        setAgents(refreshed.agents);
+        setAttendance(refreshed.attendance);
+      }
+      setImportMessage(eventId ? `${agentName}'s check-in was deleted.` : `${data.deletedCount} attendance record${data.deletedCount === 1 ? "" : "s"} deleted for today.`);
+    } catch (error) {
+      setImportMessage(error.message || "Unable to delete attendance data.");
+    } finally {
+      setIsDeletingAttendance(false);
+    }
+  }
+
   async function issueEnrollmentCode(employeeId) {
     setSavingStatuses((current) => ({ ...current, [employeeId]: true }));
     try {
@@ -284,7 +314,7 @@ export default function Home() {
                   <div className="all-agent-identity"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}</small></div></div>
                   <div className="all-agent-arrival"><span className={`status-pill ${row.tone}`}>{row.status}</span><small>{row.checkIn === "-" ? "No check-in" : `${row.checkIn} · ${Math.round(row.distance || 0)} m`}</small></div>
                   <div className="all-agent-controls">
-                    {isPresent ? <span className="agent-arrived-note">Checked in today</span> : <><select aria-label={`Status for ${row.name}`} value={selectedStatus} disabled={savingStatuses[row.id]} onChange={(event) => {
+                    {isPresent ? <><span className="agent-arrived-note">Checked in today</span><button className="button button-danger" disabled={isDeletingAttendance} onClick={() => deleteAttendance(attendance.find((event) => event.agentId === row.id)?.id, row.name)}>Delete check-in</button></> : <><select aria-label={`Status for ${row.name}`} value={selectedStatus} disabled={savingStatuses[row.id]} onChange={(event) => {
                     const status = event.target.value;
                     if (status === "ABSENT") setAgentDayStatus(row.id, status);
                     else setStatusDrafts((current) => ({ ...current, [row.id]: { status, validThrough: row.validThrough || today } }));
@@ -302,7 +332,7 @@ export default function Home() {
 
           <div className="dashboard-grid">
             <section className="panel attendance-panel">
-              <div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Verified arrivals and distance from the office.</p></div></div>
+              <div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Verified arrivals and distance from the office.</p></div><button className="button button-danger" disabled={!attendance.length || isDeletingAttendance} onClick={() => deleteAttendance(null, null)}>{isDeletingAttendance ? "Deleting..." : "Clear today&apos;s data"}</button></div>
               <div className="table-scroll"><table>
                 <thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th></tr></thead>
                 <tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.id}>

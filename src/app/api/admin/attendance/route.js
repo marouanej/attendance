@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
-import { getAdminSession } from "../../../../lib/session";
+import { getAdminSession, isSameOriginRequest } from "../../../../lib/session";
 import { getCasablancaDate, getCasablancaDay } from "../../../../lib/casablanca-time";
 
 export async function GET(request) {
@@ -60,5 +60,41 @@ export async function GET(request) {
   } catch (error) {
     console.error("Attendance dashboard lookup failed:", error);
     return NextResponse.json({ error: "Unable to load server attendance." }, { status: 503 });
+  }
+}
+
+export async function DELETE(request) {
+  const adminId = await getAdminSession(request);
+  if (!adminId) return NextResponse.json({ error: "Administrator sign-in required." }, { status: 401 });
+  if (!isSameOriginRequest(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+
+  const body = await request.json().catch(() => ({}));
+  const { day, start, end } = getCasablancaDay(new Date());
+  try {
+    if (typeof body.eventId === "string" && body.eventId) {
+      const deleted = await prisma.$transaction(async (transaction) => {
+        const event = await transaction.attendance.findUnique({ where: { id: body.eventId }, select: { id: true, employeeId: true, timestamp: true } });
+        if (!event || event.timestamp < start || event.timestamp >= end) return false;
+        await transaction.attendance.delete({ where: { id: event.id } });
+        await transaction.auditLog.create({
+          data: { event: "ATTENDANCE_EVENT_DELETED", actorUserId: adminId, employeeId: event.employeeId, metadata: { attendanceId: event.id, day } },
+        });
+        return true;
+      });
+      if (!deleted) return NextResponse.json({ error: "Today's attendance record was not found." }, { status: 404 });
+      return NextResponse.json({ deletedCount: 1 });
+    }
+
+    const deletedCount = await prisma.$transaction(async (transaction) => {
+      const result = await transaction.attendance.deleteMany({ where: { timestamp: { gte: start, lt: end } } });
+      await transaction.auditLog.create({
+        data: { event: "TODAYS_ATTENDANCE_CLEARED", actorUserId: adminId, metadata: { day, deletedCount: result.count } },
+      });
+      return result.count;
+    });
+    return NextResponse.json({ deletedCount, day });
+  } catch (error) {
+    console.error("Manual attendance deletion failed:", error);
+    return NextResponse.json({ error: "Unable to delete attendance data." }, { status: 503 });
   }
 }
