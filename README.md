@@ -31,8 +31,11 @@ A normal mobile browser cannot reliably read the connected Wi-Fi SSID or MAC add
 2. Copy `.env.example` to `.env` and set the database, WebAuthn origin/RP ID, office coordinates, and a long random `AUTH_SECRET`.
 3. Run `npm install`, then `npm run db:generate`.
 4. Apply the schema in development with `npm run db:migrate`.
-5. Create and commit the Prisma migration before deployment; apply production migrations with `npx prisma migrate deploy`.
-6. Start the app with `npm run dev` and open `http://localhost:3000`.
+5. Start the app with `npm run dev` and open `http://localhost:3000`.
+
+## Vercel database deployment
+
+Set `DATABASE_URL` in Vercel's project environment variables to a reachable PostgreSQL connection string before deploying. Vercel runs `vercel-build`, which applies checked-in migrations with `prisma migrate deploy`, generates Prisma Client, and builds the app. The initial migration creates all tables in an empty database. For manual deployment, run `npm run db:deploy` with the production `DATABASE_URL` configured. Never run `prisma migrate dev` against production.
 
 WebAuthn requires HTTPS in production. `localhost` is permitted for local development. `NEXT_PUBLIC_APP_URL`, `WEBAUTHN_ORIGIN`, and `WEBAUTHN_RP_ID` must match the production HTTPS origin.
 
