@@ -14,6 +14,7 @@ export default function Home() {
   const [showToast, setShowToast] = useState(false);
   const [agents, setAgents] = useState([]);
   const [attendance, setAttendance] = useState([]);
+  const [pendingEnrollments, setPendingEnrollments] = useState([]);
   const [importMessage, setImportMessage] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
   const checkInUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/checkin`;
@@ -21,22 +22,40 @@ export default function Home() {
     QRCode.toDataURL(checkInUrl, { width: 320, margin: 4, errorCorrectionLevel: "H", color: { dark: "#242431", light: "#ffffff" } })
       .then(setQrDataUrl)
       .catch(() => setQrDataUrl(""));
-    const refresh = () => {
-      setAgents(JSON.parse(window.localStorage.getItem("attendance-agents") || "[]"));
-      setAttendance(JSON.parse(window.localStorage.getItem("attendance-events") || "[]"));
-    };
-    window.setTimeout(refresh, 0);
-    window.addEventListener("storage", refresh);
-    return () => window.removeEventListener("storage", refresh);
   }, [checkInUrl]);
 
   useEffect(() => {
-    const restoreAdminSession = () => {
-      setIsAuthenticated(window.localStorage.getItem("attendance-admin-auth") === "true");
+    async function restoreAdminSession() {
+      try {
+        const response = await fetch("/api/admin/attendance", { cache: "no-store" });
+        setIsAuthenticated(response.ok);
+      } catch {
+        setIsAuthenticated(false);
+      }
       setLoginChecked(true);
-    };
-    window.setTimeout(restoreAdminSession, 0);
+    }
+    restoreAdminSession();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    let cancelled = false;
+    async function loadServerData() {
+      const [attendanceResponse, enrollmentResponse] = await Promise.all([
+        fetch("/api/admin/attendance", { cache: "no-store" }),
+        fetch("/api/admin/enrollments", { cache: "no-store" }),
+      ]);
+      if (cancelled) return;
+      if (attendanceResponse.ok) {
+        const data = await attendanceResponse.json();
+        setAgents((current) => [...new Map([...current, ...data.agents].map((agent) => [agent.id, agent])).values()]);
+        setAttendance((current) => [...new Map([...current, ...data.attendance].map((event) => [event.id, event])).values()]);
+      }
+      if (enrollmentResponse.ok) setPendingEnrollments(await enrollmentResponse.json());
+    }
+    loadServerData().catch(() => {});
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   const attendanceRows = agents.map((agent) => {
     const event = attendance.find((item) => item.agentId === agent.id && new Date(item.timestamp).toDateString() === new Date().toDateString());
@@ -48,7 +67,7 @@ export default function Home() {
     const file = event.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       const lines = String(reader.result).split(/\r?\n/).filter(Boolean);
       const headers = lines.shift().split(",").map((header) => header.trim().toLowerCase());
       const nameIndex = headers.findIndex((header) => ["name", "full name", "agent name"].includes(header));
@@ -57,9 +76,18 @@ export default function Home() {
         const values = line.split(",").map((value) => value.trim().replace(/^"|"$/g, ""));
         return { id: values[headers.indexOf("id")] || `agent-${Date.now()}-${index}`, name: values[nameIndex], team: values[headers.indexOf("department")] || values[headers.indexOf("team")] || "", active: true };
       }).filter((agent) => agent.name);
-      window.localStorage.setItem("attendance-agents", JSON.stringify(imported));
-      setAgents(imported);
-      setImportMessage(`${imported.length} agent${imported.length === 1 ? "" : "s"} imported.`);
+      const response = await fetch("/api/admin/agents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ agents: imported }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setImportMessage(result.error || "Unable to import agents.");
+        return;
+      }
+      setAgents(result.agents);
+      setImportMessage(`${result.imported} agent${result.imported === 1 ? "" : "s"} imported to the shared attendance list.`);
     };
     reader.readAsText(file);
     event.target.value = "";
@@ -87,9 +115,22 @@ export default function Home() {
       setIsLoggingIn(false);
       return;
     }
-    window.localStorage.setItem("attendance-admin-auth", "true");
     setIsAuthenticated(true);
     setIsLoggingIn(false);
+  }
+
+  async function approveEnrollment(id) {
+    const enrollment = pendingEnrollments.find((item) => item.id === id);
+    if (!window.confirm(`Have you verified ${enrollment?.name || "this agent"} against their official identity or roster ID in person?`)) return;
+    const response = await fetch(`/api/admin/enrollments/${id}/approve`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setImportMessage(data.error || "Unable to approve enrollment.");
+      return;
+    }
+    setPendingEnrollments((current) => current.filter((enrollment) => enrollment.id !== id));
+    if (enrollment) setAgents((current) => current.some((agent) => agent.id === id) ? current : [...current, { id, name: enrollment.name, team: enrollment.department || "" }]);
+    setImportMessage("Agent approved. They can now check in with their passkey.");
   }
 
   function printQr() {
@@ -122,6 +163,8 @@ export default function Home() {
           <section className="page-heading"><div><p className="eyebrow" suppressHydrationWarning>{new Date().toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" }).toUpperCase()}</p><h1>Attendance</h1><p className="subheading">Import agents and review verified arrivals.</p></div><div className="heading-actions"><button className="button button-secondary" onClick={exportCsv} disabled={!attendanceRows.length}><span>↓</span> Export CSV</button><label className="button button-primary file-button"><span>↑</span> Import CSV<input type="file" accept=".csv,text/csv" onChange={importAgents} /></label></div></section>
 
           {importMessage && <div className="import-message">{importMessage}</div>}
+
+          {pendingEnrollments.length > 0 && <section className="panel pending-enrollments"><div className="panel-header"><div><h2>Pending agent approvals</h2><p>Verify the person in person against official ID before activation.</p></div><span className="live-badge">{pendingEnrollments.length} waiting</span></div><div className="activity-list">{pendingEnrollments.map((enrollment) => <div key={enrollment.id}><span className="activity-icon blue-icon">♙</span><p><strong>{enrollment.name}</strong><small>{enrollment.rosterId ? `Roster ID ${enrollment.rosterId}` : "New agent enrollment"} · passkey registered · office location verified · {new Date(enrollment.createdAt).toLocaleString()}</small></p><button className="button button-primary approve-button" onClick={() => approveEnrollment(enrollment.id)}>Approve</button></div>)}</div></section>}
 
           <section className="stats-grid" aria-label="Attendance summary">
             <div className="stat-card"><div className="stat-top"><span>Arrived today</span><span className="stat-icon green-icon">✓</span></div><strong>{attendanceRows.filter((row) => row.status === "Present").length}<span className="stat-denom"> / {agents.length}</span></strong><div className="stat-foot">Recorded from verified scans</div></div>

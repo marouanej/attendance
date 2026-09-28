@@ -70,6 +70,19 @@ model PasskeyCredential {
   @@index([employeeId, revokedAt])
 }
 
+model WebAuthnChallenge {
+  id           String    @id @default(cuid())
+  challenge    String
+  purpose      String
+  employeeId   String?
+  employeeName String?
+  createdAt    DateTime  @default(now())
+  expiresAt    DateTime
+  consumedAt   DateTime?
+
+  @@index([expiresAt])
+}
+
 model Attendance {
   id                   String             @id @default(cuid())
   employee             Employee           @relation(fields: [employeeId], references: [id])
