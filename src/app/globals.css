@@ -13,12 +13,19 @@
 .day-status-agent strong, .day-status-agent small { display: block; }
 .day-status-agent strong { color: #4c4d59; font-size: 11px; }
 .day-status-agent small { color: #999aa6; font-size: 9px; margin-top: 4px; }
-.day-status-row select { min-width: 132px; max-width: 170px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #575866; padding: 8px 9px; font-size: 10px; }
+.day-status-row select, .date-label input { min-width: 132px; max-width: 170px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #575866; padding: 8px 9px; font-size: 10px; }
+.date-label { display: grid; gap: 4px; color: #858694; font-size: 9px; }
 .enrollment-code-button { flex-shrink: 0; padding: 8px 10px; }
 .issued-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; padding: 10px; background: #f7f8fa; border: 1px solid var(--line); border-radius: 6px; }
 .issued-code code { color: #20212a; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
 .issued-code small { flex-basis: 100%; color: #858694; font-size: 10px; line-height: 1.5; }
 @media (max-width: 560px) { .day-status-list { padding: 0 12px; }.day-status-row { flex-wrap: wrap; }.day-status-agent { flex-basis: 100%; }.day-status-row select { flex: 1; min-width: 0; } }
+.button-danger { border: 1px solid #f0d7d5; border-radius: 6px; background: #fff; color: #bd625c; padding: 8px 10px; font-size: 10px; font-weight: 700; }
+.agent-actions { display: flex; align-items: center; gap: 6px; }
+.agent-edit-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 10px 0; }
+.agent-edit-form label { display: grid; gap: 5px; color: #777884; font-size: 10px; }
+.agent-edit-form input { min-width: 180px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 9px; color: var(--ink); font-size: 11px; }
+.agent-edit-form button { min-height: 34px; }
 
 :root { --ink: #20212a; --muted: #8c8d9a; --line: #ececf2; --purple: #6457e8; --soft-purple: #f1efff; --green: #35b77a; --orange: #efaa4f; --paper: #fbfbfd; }
 * { box-sizing: border-box; }

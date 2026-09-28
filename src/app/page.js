@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
 
@@ -16,9 +16,12 @@ export default function Home() {
   const [attendance, setAttendance] = useState([]);
   const [pendingEnrollments, setPendingEnrollments] = useState([]);
   const [importMessage, setImportMessage] = useState("");
-  const [leaveDurations, setLeaveDurations] = useState({});
   const [savingStatuses, setSavingStatuses] = useState({});
   const [enrollmentCodes, setEnrollmentCodes] = useState({});
+  const [statusDrafts, setStatusDrafts] = useState({});
+  const [today, setToday] = useState("");
+  const [editingAgentId, setEditingAgentId] = useState(null);
+  const [agentForm, setAgentForm] = useState({ name: "", department: "" });
   const [qrDataUrl, setQrDataUrl] = useState("");
   const checkInUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/checkin`;
   useEffect(() => {
@@ -51,8 +54,8 @@ export default function Home() {
       if (cancelled) return;
       if (attendanceResponse.ok) {
         const data = await attendanceResponse.json();
+        setToday(data.day);
         setAgents(data.agents);
-        setLeaveDurations((current) => ({ ...current, ...Object.fromEntries(data.agents.filter((agent) => agent.durationHours).map((agent) => [agent.id, String(agent.durationHours)])) }));
         setAttendance(data.attendance);
       }
       if (enrollmentResponse.ok) setPendingEnrollments(await enrollmentResponse.json());
@@ -141,24 +144,66 @@ export default function Home() {
     setImportMessage("Agent approved. They can now check in with their passkey.");
   }
 
-  async function setAgentDayStatus(employeeId, status, selectedDurationHours) {
+  async function setAgentDayStatus(employeeId, status, validThrough) {
     if (!status) return;
     setSavingStatuses((current) => ({ ...current, [employeeId]: true }));
-    const durationHours = Number(selectedDurationHours || leaveDurations[employeeId] || 24);
     try {
       const response = await fetch(`/api/admin/agents/${employeeId}/day-status`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status, durationHours }),
+        body: JSON.stringify({ status, validThrough }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Unable to update agent status.");
-      setAgents((current) => current.map((agent) => agent.id === employeeId ? { ...agent, dayStatus: data.status, validUntil: data.validUntil, durationHours: data.durationHours } : agent));
+      setAgents((current) => current.map((agent) => agent.id === employeeId ? { ...agent, dayStatus: data.status, validUntil: data.validUntil, validThrough: data.validThrough } : agent));
+      setStatusDrafts((current) => { const next = { ...current }; delete next[employeeId]; return next; });
       setImportMessage(`${status === "PERMISSION" ? "Permission" : status === "RECUPERATION" ? "Recuperation" : "Absent"} status saved for ${attendanceRows.find((row) => row.id === employeeId)?.name || "agent"}.`);
     } catch (error) {
       setImportMessage(error.message || "Unable to update agent status.");
     } finally {
       setSavingStatuses((current) => ({ ...current, [employeeId]: false }));
+    }
+  }
+
+  function beginAgentEdit(agent) {
+    setEditingAgentId(agent.id);
+    setAgentForm({ name: agent.name, department: agent.team || "" });
+  }
+
+  async function saveAgentEdit(employeeId) {
+    setSavingStatuses((current) => ({ ...current, [employeeId]: true }));
+    try {
+      const response = await fetch(`/api/admin/agents/${employeeId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(agentForm),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to update agent.");
+      setAgents((current) => current.map((agent) => agent.id === employeeId ? { ...agent, ...data } : agent));
+      setEditingAgentId(null);
+      setImportMessage("Agent details updated.");
+    } catch (error) {
+      setImportMessage(error.message || "Unable to update agent.");
+    } finally {
+      setSavingStatuses((current) => ({ ...current, [employeeId]: false }));
+    }
+  }
+
+  async function removeAgent(agent) {
+    if (!window.confirm(`Remove ${agent.name} from the active roster? Attendance history will be preserved.`)) return;
+    setSavingStatuses((current) => ({ ...current, [agent.id]: true }));
+    try {
+      const response = await fetch(`/api/admin/agents/${agent.id}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to remove agent.");
+      setAgents((current) => current.filter((item) => item.id !== agent.id));
+      setEnrollmentCodes((current) => { const next = { ...current }; delete next[agent.id]; return next; });
+      setImportMessage(`${agent.name} was removed from the active roster. Attendance history was preserved.`);
+    } catch (error) {
+      setImportMessage(error.message || "Unable to remove agent.");
+    } finally {
+      setSavingStatuses((current) => ({ ...current, [agent.id]: false }));
     }
   }
 
@@ -227,10 +272,46 @@ export default function Home() {
             <div className="stat-card"><div className="stat-top"><span>GPS verified</span><span className="stat-icon violet-icon">↗</span></div><strong>{attendance.length ? "100" : "0"}<span className="percent">%</span></strong><div className="stat-foot">Server-side location check</div></div>
           </section>
 
-          <section className="panel day-status-panel"><div className="panel-header"><div><h2>Non-arrival status</h2><p>Set permission, recuperation, or absent for employees who have not checked in. Issue private setup codes for rostered agents without passkeys.</p></div></div><div className="day-status-list">{attendanceRows.filter((row) => row.dayStatus !== "PRESENT").length ? attendanceRows.filter((row) => row.dayStatus !== "PRESENT").map((row) => <div className="day-status-row" key={row.id}><div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}{row.validUntil && ["PERMISSION", "RECUPERATION"].includes(row.dayStatus) ? ` · ${row.durationHours || leaveDurations[row.id] || 24} hours, until ${new Date(row.validUntil).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}` : ""}</small></div><select aria-label={`Status for ${row.name}`} value={["PERMISSION", "RECUPERATION", "ABSENT"].includes(row.dayStatus) ? row.dayStatus : ""} disabled={savingStatuses[row.id]} onChange={(event) => setAgentDayStatus(row.id, event.target.value)}><option value="" disabled>Choose status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>{["PERMISSION", "RECUPERATION"].includes(row.dayStatus) && <select aria-label={`Duration for ${row.name}`} value={leaveDurations[row.id] || String(row.durationHours || 24)} disabled={savingStatuses[row.id]} onChange={(event) => { const durationHours = event.target.value; setLeaveDurations((current) => ({ ...current, [row.id]: durationHours })); setAgentDayStatus(row.id, row.dayStatus, durationHours); }}><option value="24">24 hours</option><option value="72">72 hours</option><option value="96">4 days</option></select>}{row.canIssueEnrollmentCode && <button className="button button-secondary enrollment-code-button" disabled={savingStatuses[row.id]} onClick={() => issueEnrollmentCode(row.id)}>{savingStatuses[row.id] ? "Issuing..." : "Issue setup code"}</button>}{enrollmentCodes[row.id] && <div className="issued-code"><code>{enrollmentCodes[row.id].code}</code><button className="button button-secondary" onClick={() => copyEnrollmentCode(row.id)}>Copy</button><small>Valid until {new Date(enrollmentCodes[row.id].expiresAt).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}. Give this code directly to the named employee.</small></div>}</div>) : <p className="empty-cell">Everyone has checked in.</p>}</div></section>
+          <section className="panel day-status-panel">
+            <div className="panel-header"><div><h2>Non-arrival status</h2><p>Set permission, recuperation, or absent for employees who have not checked in. Issue setup codes for rostered agents without passkeys.</p></div></div>
+            <div className="day-status-list">
+              {attendanceRows.filter((row) => row.dayStatus !== "PRESENT").length ? attendanceRows.filter((row) => row.dayStatus !== "PRESENT").map((row) => {
+                const draft = statusDrafts[row.id];
+                const selectedStatus = draft?.status || (["PERMISSION", "RECUPERATION", "ABSENT"].includes(row.dayStatus) ? row.dayStatus : "");
+                const selectedDate = draft?.validThrough || row.validThrough || today;
+                return <div className="day-status-row" key={row.id}>
+                  <div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}{row.validThrough && ["PERMISSION", "RECUPERATION"].includes(row.dayStatus) ? ` · through ${row.validThrough}` : ""}</small></div>
+                  <select aria-label={`Status for ${row.name}`} value={selectedStatus} disabled={savingStatuses[row.id]} onChange={(event) => {
+                    const status = event.target.value;
+                    if (status === "ABSENT") setAgentDayStatus(row.id, status);
+                    else setStatusDrafts((current) => ({ ...current, [row.id]: { status, validThrough: row.validThrough || today } }));
+                  }}><option value="" disabled>Choose status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>
+                  {["PERMISSION", "RECUPERATION"].includes(selectedStatus) && <><label className="date-label">Through<input aria-label={`Permission or recuperation end date for ${row.name}`} type="date" min={today} value={selectedDate} disabled={savingStatuses[row.id]} onChange={(event) => setStatusDrafts((current) => ({ ...current, [row.id]: { status: selectedStatus, validThrough: event.target.value } }))} /></label><button className="button button-primary" disabled={savingStatuses[row.id] || !selectedDate} onClick={() => setAgentDayStatus(row.id, selectedStatus, selectedDate)}>{savingStatuses[row.id] ? "Saving..." : "Save dates"}</button></>}
+                  {row.canIssueEnrollmentCode && <button className="button button-secondary enrollment-code-button" disabled={savingStatuses[row.id]} onClick={() => issueEnrollmentCode(row.id)}>{savingStatuses[row.id] ? "Issuing..." : "Issue setup code"}</button>}
+                  {enrollmentCodes[row.id] && <div className="issued-code"><code>{enrollmentCodes[row.id].code}</code><button className="button button-secondary" onClick={() => copyEnrollmentCode(row.id)}>Copy</button><small>Valid until {new Date(enrollmentCodes[row.id].expiresAt).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}. Give this code directly to the named employee.</small></div>}
+                </div>;
+              }) : <p className="empty-cell">Everyone has checked in.</p>}
+            </div>
+          </section>
 
           <div className="dashboard-grid">
-            <section className="panel attendance-panel"><div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan.</p></div></div><div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div><div className="table-scroll"><table><thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th></tr></thead><tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.name}><td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td><td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td><td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td><td><span className={`status-pill ${row.tone}`}>{row.status}</span></td></tr>) : <tr><td colSpan="4" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody></table></div></section>
+            <section className="panel attendance-panel">
+              <div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan. Edit or remove agents from the active roster.</p></div></div>
+              <div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div>
+              <div className="table-scroll"><table>
+                <thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+                <tbody>{attendanceRows.length ? attendanceRows.map((row) => <Fragment key={row.id}>
+                  <tr key={row.id}>
+                    <td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td>
+                    <td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td>
+                    <td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td>
+                    <td><span className={`status-pill ${row.tone}`}>{row.status}</span></td>
+                    <td className="agent-actions"><button className="button button-secondary" disabled={savingStatuses[row.id]} onClick={() => editingAgentId === row.id ? setEditingAgentId(null) : beginAgentEdit(row)}>Edit</button><button className="button button-danger" disabled={savingStatuses[row.id]} onClick={() => removeAgent(row)}>Remove</button></td>
+                  </tr>
+                  {editingAgentId === row.id && <tr key={`${row.id}-edit`}><td colSpan="5"><form className="agent-edit-form" onSubmit={(event) => { event.preventDefault(); saveAgentEdit(row.id); }}><label>Name<input required maxLength={120} value={agentForm.name} onChange={(event) => setAgentForm((current) => ({ ...current, name: event.target.value }))} /></label><label>Department<input maxLength={120} value={agentForm.department} onChange={(event) => setAgentForm((current) => ({ ...current, department: event.target.value }))} /></label><button className="button button-primary" disabled={savingStatuses[row.id]}>{savingStatuses[row.id] ? "Saving..." : "Save"}</button><button className="button button-secondary" type="button" onClick={() => setEditingAgentId(null)}>Cancel</button></form></td></tr>}
+                </Fragment>) : <tr><td colSpan="5" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody>
+              </table></div>
+            </section>
 
             <section className="panel qr-panel"><div className="panel-header"><div><h2>Office QR code</h2><p>Permanent check-in link</p></div></div><div className="qr-content"><div className="qr-code" aria-label="Permanent office check-in QR code">{qrDataUrl ? <Image src={qrDataUrl} alt="Scan to open office check-in" width={320} height={320} unoptimized /> : <span className="qr-loading">Generating QR...</span>}</div><p>Agents scan this code to open<br /><strong>the attendance page</strong></p><span className="qr-url">{checkInUrl}</span></div><button className="print-button" onClick={printQr} disabled={!qrDataUrl}><span>▣</span> Print QR code</button><p className="qr-footnote">This QR code does not change.</p></section>
           </div>

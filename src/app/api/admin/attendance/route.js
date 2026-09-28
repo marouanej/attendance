@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import { getAdminSession } from "../../../../lib/session";
-import { getCasablancaDay } from "../../../../lib/casablanca-time";
+import { getCasablancaDate, getCasablancaDay } from "../../../../lib/casablanca-time";
 
 export async function GET(request) {
   if (!await getAdminSession(request)) return NextResponse.json({ error: "Administrator sign-in required." }, { status: 401 });
@@ -44,6 +44,7 @@ export async function GET(request) {
           canIssueEnrollmentCode: employee.passkeys.length === 0,
           dayStatus,
           validUntil,
+          validThrough: ["PERMISSION", "RECUPERATION"].includes(dayStatus) && validUntil > now ? getCasablancaDate(validUntil) : null,
           durationHours: currentStatus?.status === dayStatus ? currentStatus.durationHours : activeLeave?.status === dayStatus ? activeLeave.durationHours : null,
         };
       }),

@@ -52,3 +52,16 @@ export function getCasablancaHour(date = new Date()) {
   }).formatToParts(date);
   return Number(parts.find((part) => part.type === "hour")?.value);
 }
+
+export function getCasablancaDate(date = new Date()) {
+  const parts = dateParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function getCasablancaDateEnd(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const [year, month, date] = day.split("-").map(Number);
+  const validated = new Date(Date.UTC(year, month - 1, date));
+  if (validated.getUTCFullYear() !== year || validated.getUTCMonth() !== month - 1 || validated.getUTCDate() !== date) return null;
+  return new Date(localMidnightUtc(shiftDay(day, 1)).getTime() - 1);
+}

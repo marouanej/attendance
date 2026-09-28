@@ -59,6 +59,7 @@ model Employee {
   dayStatuses    EmployeeDayStatus[]
   enrollmentCodeHash String?
   enrollmentCodeExpiresAt DateTime?
+  removedAt      DateTime?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 }
