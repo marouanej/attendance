@@ -14,6 +14,10 @@
 .day-status-agent strong { color: #4c4d59; font-size: 11px; }
 .day-status-agent small { color: #999aa6; font-size: 9px; margin-top: 4px; }
 .day-status-row select { min-width: 132px; max-width: 170px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #575866; padding: 8px 9px; font-size: 10px; }
+.enrollment-code-button { flex-shrink: 0; padding: 8px 10px; }
+.issued-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; padding: 10px; background: #f7f8fa; border: 1px solid var(--line); border-radius: 6px; }
+.issued-code code { color: #20212a; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
+.issued-code small { flex-basis: 100%; color: #858694; font-size: 10px; line-height: 1.5; }
 @media (max-width: 560px) { .day-status-list { padding: 0 12px; }.day-status-row { flex-wrap: wrap; }.day-status-agent { flex-basis: 100%; }.day-status-row select { flex: 1; min-width: 0; } }
 
 :root { --ink: #20212a; --muted: #8c8d9a; --line: #ececf2; --purple: #6457e8; --soft-purple: #f1efff; --green: #35b77a; --orange: #efaa4f; --paper: #fbfbfd; }

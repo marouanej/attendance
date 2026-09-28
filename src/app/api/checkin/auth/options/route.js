@@ -19,7 +19,7 @@ export async function POST(request) {
     });
     if (employees.length > 1) return NextResponse.json({ error: "More than one agent has this name. Contact your administrator." }, { status: 409 });
     const employee = employees[0];
-    if (!employee) return NextResponse.json({ error: "Agent not found. Start a new enrollment." }, { status: 404 });
+    if (!employee) return NextResponse.json({ error: "This name is not on the agent roster. Ask your administrator to import you." }, { status: 404 });
     if (!employee.active) return NextResponse.json({ error: "Your enrollment is awaiting administrator approval." }, { status: 403 });
     if (!employee.passkeys.length) return NextResponse.json({ error: "Register a passkey to continue.", status: "NO_PASSKEY" }, { status: 409 });
 

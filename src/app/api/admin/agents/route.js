@@ -36,7 +36,10 @@ export async function POST(request) {
         const employeeNumber = `IMPORT-${agent.externalId}`;
         const emailKey = createHash("sha256").update(employeeNumber).digest("hex").slice(0, 32);
         const internalEmail = `agent-${emailKey}@import.invalid`;
-        const existing = await transaction.employee.findUnique({ where: { employeeNumber }, select: { id: true } });
+        const existing = await transaction.employee.findUnique({
+          where: { employeeNumber },
+          include: { passkeys: { where: { revokedAt: null }, select: { id: true } } },
+        });
         const normalizedName = `${agent.firstName} ${agent.lastName}`.toLowerCase();
         await transaction.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${normalizedName}, 1))`;
         const nameCollision = await transaction.employee.findFirst({
@@ -63,7 +66,7 @@ export async function POST(request) {
           });
           employeeId = created.employee.id;
         }
-        result.push({ id: employeeId, name: agent.name, team: agent.department });
+        result.push({ id: employeeId, name: agent.name, team: agent.department, canIssueEnrollmentCode: !existing || existing.passkeys.length === 0 });
       }
       return result;
     });

@@ -10,6 +10,7 @@ function CheckInShell({ children, error }) {
 export default function CheckInPage() {
   const [step, setStep] = useState("identify");
   const [name, setName] = useState("");
+  const [enrollmentCode, setEnrollmentCode] = useState("");
   const [agent, setAgent] = useState(null);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -27,19 +28,10 @@ export default function CheckInPage() {
         body: JSON.stringify({ name: name.trim() }),
       });
       let data = await response.json().catch(() => ({}));
-      if (response.status === 404 || (response.status === 409 && data.status === "NO_PASSKEY")) {
-        response = await fetch("/api/checkin/enrollment/options", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ name: name.trim() }),
-        });
-        data = await response.json().catch(() => ({}));
-        if (response.status === 409 && data.status === "PENDING") {
-          setError("Your enrollment is waiting for administrator approval.");
-          return;
-        }
-        if (!response.ok) throw new Error(data.error || "Unable to start enrollment.");
-        setServerFlow("enrollment");
+      if (response.status === 409 && data.status === "NO_PASSKEY") {
+        setAgent({ name: name.trim(), server: true });
+        setStep("enrollment-code");
+        return;
       } else {
         if (!response.ok) throw new Error(data.error || "Unable to find your registered account.");
         setServerFlow("authentication");
@@ -49,6 +41,27 @@ export default function CheckInPage() {
       setStep("biometric");
     } catch (requestError) {
       setError(requestError.message || "Unable to connect to attendance services.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function startEnrollment() {
+    setError("");
+    setIsBusy(true);
+    try {
+      const response = await fetch("/api/checkin/enrollment/options", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: agent.name, code: enrollmentCode }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to start enrollment.");
+      setServerFlow("enrollment");
+      setServerOptions(data);
+      setStep("biometric");
+    } catch (requestError) {
+      setError(requestError.message || "Unable to start enrollment.");
     } finally {
       setIsBusy(false);
     }
@@ -126,6 +139,10 @@ export default function CheckInPage() {
   if (agent?.server && step === "biometric") {
     const registering = serverFlow === "enrollment";
     return <CheckInShell error={error}><h1>{registering ? "Register your phone." : "Verify your identity."}</h1><p className="checkin-copy">{registering ? "Create a passkey with your phone’s biometric or secure screen lock. Your enrollment will wait for administrator approval." : "Use the passkey registered to this agent account."}</p><div className="checkin-step"><span className="step-current">1</span><div><strong>Passkey</strong><small>Face ID, fingerprint, or device PIN</small></div></div><button className="checkin-button" onClick={verifyBiometric} disabled={isBusy}>{isBusy ? "Waiting for your phone..." : registering ? "Register passkey" : "Verify passkey"}<span>→</span></button></CheckInShell>;
+  }
+
+  if (agent?.server && step === "enrollment-code") {
+    return <CheckInShell error={error}><h1>Enter your setup code.</h1><p className="checkin-copy">Passkey setup is limited to agents on the office roster. Enter the one-time code your administrator gave you.</p><label className="checkin-label" htmlFor="enrollment-code">One-time code</label><input className="checkin-input" id="enrollment-code" value={enrollmentCode} onChange={(event) => setEnrollmentCode(event.target.value.toUpperCase().replace(/\s+/g, ""))} autoComplete="one-time-code" spellCheck="false" required /><button className="checkin-button" onClick={startEnrollment} disabled={isBusy || !enrollmentCode.trim()}>{isBusy ? "Checking code..." : "Continue to passkey setup"}<span>→</span></button></CheckInShell>;
   }
 
   if (agent?.server && step === "location") {

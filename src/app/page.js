@@ -18,6 +18,7 @@ export default function Home() {
   const [importMessage, setImportMessage] = useState("");
   const [leaveDurations, setLeaveDurations] = useState({});
   const [savingStatuses, setSavingStatuses] = useState({});
+  const [enrollmentCodes, setEnrollmentCodes] = useState({});
   const [qrDataUrl, setQrDataUrl] = useState("");
   const checkInUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/checkin`;
   useEffect(() => {
@@ -161,6 +162,31 @@ export default function Home() {
     }
   }
 
+  async function issueEnrollmentCode(employeeId) {
+    setSavingStatuses((current) => ({ ...current, [employeeId]: true }));
+    try {
+      const response = await fetch(`/api/admin/agents/${employeeId}/enrollment-code`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to issue setup code.");
+      setEnrollmentCodes((current) => ({ ...current, [employeeId]: data }));
+    } catch (error) {
+      setImportMessage(error.message || "Unable to issue setup code.");
+    } finally {
+      setSavingStatuses((current) => ({ ...current, [employeeId]: false }));
+    }
+  }
+
+  async function copyEnrollmentCode(employeeId) {
+    const code = enrollmentCodes[employeeId]?.code;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setImportMessage("One-time passkey setup code copied.");
+    } catch {
+      setImportMessage("Copy the displayed code and give it directly to the employee.");
+    }
+  }
+
   function printQr() {
     if (!qrDataUrl) return;
     const printWindow = window.open("", "attendance-qr-print", "width=800,height=900");
@@ -201,7 +227,7 @@ export default function Home() {
             <div className="stat-card"><div className="stat-top"><span>GPS verified</span><span className="stat-icon violet-icon">↗</span></div><strong>{attendance.length ? "100" : "0"}<span className="percent">%</span></strong><div className="stat-foot">Server-side location check</div></div>
           </section>
 
-          <section className="panel day-status-panel"><div className="panel-header"><div><h2>Non-arrival status</h2><p>Set permission, recuperation, or absent for employees who have not checked in.</p></div></div><div className="day-status-list">{attendanceRows.filter((row) => row.dayStatus !== "PRESENT").length ? attendanceRows.filter((row) => row.dayStatus !== "PRESENT").map((row) => <div className="day-status-row" key={row.id}><div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}{row.validUntil && ["PERMISSION", "RECUPERATION"].includes(row.dayStatus) ? ` · ${row.durationHours || leaveDurations[row.id] || 24} hours, until ${new Date(row.validUntil).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}` : ""}</small></div><select aria-label={`Status for ${row.name}`} value={["PERMISSION", "RECUPERATION", "ABSENT"].includes(row.dayStatus) ? row.dayStatus : ""} disabled={savingStatuses[row.id]} onChange={(event) => setAgentDayStatus(row.id, event.target.value)}><option value="" disabled>Choose status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>{["PERMISSION", "RECUPERATION"].includes(row.dayStatus) && <select aria-label={`Duration for ${row.name}`} value={leaveDurations[row.id] || String(row.durationHours || 24)} disabled={savingStatuses[row.id]} onChange={(event) => { const durationHours = event.target.value; setLeaveDurations((current) => ({ ...current, [row.id]: durationHours })); setAgentDayStatus(row.id, row.dayStatus, durationHours); }}><option value="24">24 hours</option><option value="72">72 hours</option><option value="96">4 days</option></select>}</div>) : <p className="empty-cell">Everyone has checked in.</p>}</div></section>
+          <section className="panel day-status-panel"><div className="panel-header"><div><h2>Non-arrival status</h2><p>Set permission, recuperation, or absent for employees who have not checked in. Issue private setup codes for rostered agents without passkeys.</p></div></div><div className="day-status-list">{attendanceRows.filter((row) => row.dayStatus !== "PRESENT").length ? attendanceRows.filter((row) => row.dayStatus !== "PRESENT").map((row) => <div className="day-status-row" key={row.id}><div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}{row.validUntil && ["PERMISSION", "RECUPERATION"].includes(row.dayStatus) ? ` · ${row.durationHours || leaveDurations[row.id] || 24} hours, until ${new Date(row.validUntil).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}` : ""}</small></div><select aria-label={`Status for ${row.name}`} value={["PERMISSION", "RECUPERATION", "ABSENT"].includes(row.dayStatus) ? row.dayStatus : ""} disabled={savingStatuses[row.id]} onChange={(event) => setAgentDayStatus(row.id, event.target.value)}><option value="" disabled>Choose status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>{["PERMISSION", "RECUPERATION"].includes(row.dayStatus) && <select aria-label={`Duration for ${row.name}`} value={leaveDurations[row.id] || String(row.durationHours || 24)} disabled={savingStatuses[row.id]} onChange={(event) => { const durationHours = event.target.value; setLeaveDurations((current) => ({ ...current, [row.id]: durationHours })); setAgentDayStatus(row.id, row.dayStatus, durationHours); }}><option value="24">24 hours</option><option value="72">72 hours</option><option value="96">4 days</option></select>}{row.canIssueEnrollmentCode && <button className="button button-secondary enrollment-code-button" disabled={savingStatuses[row.id]} onClick={() => issueEnrollmentCode(row.id)}>{savingStatuses[row.id] ? "Issuing..." : "Issue setup code"}</button>}{enrollmentCodes[row.id] && <div className="issued-code"><code>{enrollmentCodes[row.id].code}</code><button className="button button-secondary" onClick={() => copyEnrollmentCode(row.id)}>Copy</button><small>Valid until {new Date(enrollmentCodes[row.id].expiresAt).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}. Give this code directly to the named employee.</small></div>}</div>) : <p className="empty-cell">Everyone has checked in.</p>}</div></section>
 
           <div className="dashboard-grid">
             <section className="panel attendance-panel"><div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan.</p></div></div><div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div><div className="table-scroll"><table><thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th></tr></thead><tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.name}><td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td><td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td><td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td><td><span className={`status-pill ${row.tone}`}>{row.status}</span></td></tr>) : <tr><td colSpan="4" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody></table></div></section>

@@ -9,7 +9,7 @@ export async function GET(request) {
     const now = new Date();
     const { day, start, end } = getCasablancaDay(now);
     const [employees, events, todayStatuses, activeLeaveStatuses] = await Promise.all([
-      prisma.employee.findMany({ where: { active: true }, select: { id: true, firstName: true, lastName: true, department: true } }),
+      prisma.employee.findMany({ where: { active: true }, include: { passkeys: { where: { revokedAt: null }, select: { id: true } } } }),
       prisma.attendance.findMany({
         where: { timestamp: { gte: start, lt: end }, verificationStatus: "VERIFIED" },
         include: { employee: { select: { firstName: true, lastName: true, department: true } } },
@@ -41,6 +41,7 @@ export async function GET(request) {
           id: employee.id,
           name: `${employee.firstName} ${employee.lastName}`,
           team: employee.department || "",
+          canIssueEnrollmentCode: employee.passkeys.length === 0,
           dayStatus,
           validUntil,
           durationHours: currentStatus?.status === dayStatus ? currentStatus.durationHours : activeLeave?.status === dayStatus ? activeLeave.durationHours : null,

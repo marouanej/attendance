@@ -13,10 +13,11 @@ The administrator starts with an empty attendance list. Use **Import agents** on
 
 When an agent scans the permanent QR code:
 
-1. They enter their full name. Imported agents are looked up in PostgreSQL; an unknown name starts enrollment.
-2. The phone creates a platform passkey with biometric or secure-screen-lock verification. The server verifies the WebAuthn response and stores the public key, never biometric data.
-3. A new agent, or an imported agent binding their first passkey, remains inactive until an administrator verifies their identity and approves the enrollment. Enrollment does not request location.
-4. On attendance check-in, the approved agent authenticates with their passkey and sends precise GPS coordinates. The server enforces the configured office geofence and accuracy limit, then records the time, location, and distance from the office in PostgreSQL.
+1. They enter their full name. Agents are looked up in PostgreSQL; unrostered names are directed to the administrator.
+2. For an imported agent without a passkey, the administrator issues a private, one-use setup code from the dashboard. The code expires after 24 hours and is tied to that roster record; unknown names cannot self-register.
+3. The phone creates a platform passkey with biometric or secure-screen-lock verification. The server verifies the WebAuthn response and stores the public key, never biometric data. The code is consumed with the first successful passkey registration.
+4. The agent remains inactive until an administrator verifies their identity in person and approves the enrollment. Enrollment does not request location.
+5. On attendance check-in, the approved agent authenticates with their passkey and sends precise GPS coordinates. The server enforces the configured office geofence and accuracy limit, then records the time, location, and distance from the office in PostgreSQL.
 
 The admin dashboard provides a scrollable status selector for agents who have not checked in: **Permission**, **Recuperation**, or **Absent**. Permission and recuperation expire after the admin-selected 24 hours, 72 hours, or 4 days. The scheduled job carries active leave forward by Casablanca calendar day. From 10:00 Casablanca time, agents with no check-in and no active leave are marked absent. At 18:00, that day's attendance rows are permanently deleted, and check-in closes until the next day.
 
@@ -44,7 +45,7 @@ WebAuthn requires HTTPS in production. `localhost` is permitted for local develo
 
 ## Security model
 
-The permanent QR contains only the configured check-in URL and never changes. A passkey proves control of an authenticator, not the real-world identity behind a typed name, so a human administrator must verify every first enrollment against official ID before approval. Biometric material never leaves the employee device. The server validates submitted GPS coordinates, calculates Haversine distance, enforces accuracy limits, applies duplicate-scan rules, and writes a server timestamp. Browser GPS can be spoofed; configure `GPS_PLUS_LOCAL_NETWORK` for an additional office-network check, or use a managed native app when stronger device location assurance is required. Attendance identity comes from the verified passkey session, never from a client-provided employee ID.
+The permanent QR contains only the configured check-in URL and never changes. WebAuthn does not expose or compare biometrics: a passkey proves control of an authenticator, not the real-world identity behind a name. Admin-issued one-use codes restrict first passkey setup to a specific roster entry, and a human administrator must still verify identity in person before approval. Biometric material never leaves the employee device. The server validates submitted GPS coordinates, calculates Haversine distance, enforces accuracy limits, applies duplicate-scan rules, and writes a server timestamp. Browser GPS can be spoofed; configure `GPS_PLUS_LOCAL_NETWORK` for an additional office-network check, or use a managed native app when stronger device location assurance is required. Attendance identity comes from the verified passkey session, never from a client-provided employee ID.
 
 The Prisma schema includes employees, multiple revocable passkeys, attendance events, office settings, and audit logs. Keep location retention limited to the attendance purpose and document the retention policy for employees.
 
