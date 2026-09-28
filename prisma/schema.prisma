@@ -27,6 +27,12 @@ enum NetworkVerificationMode {
   GPS_PLUS_LOCAL_NETWORK
 }
 
+enum EmployeeDayStatusType {
+  PERMISSION
+  RECUPERATION
+  ABSENT
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -50,6 +56,7 @@ model Employee {
   userId         String               @unique
   passkeys       PasskeyCredential[]
   attendance     Attendance[]
+  dayStatuses    EmployeeDayStatus[]
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 }
@@ -81,6 +88,27 @@ model WebAuthnChallenge {
   consumedAt   DateTime?
 
   @@index([expiresAt])
+}
+
+model EmployeeDayStatus {
+  id          String                @id @default(cuid())
+  employee    Employee              @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employeeId  String
+  day         String
+  status      EmployeeDayStatusType
+  durationHours Int?
+  validUntil  DateTime?
+  setBy       String
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+
+  @@unique([employeeId, day])
+  @@index([day, status])
+}
+
+model DailyJobRun {
+  id        String   @id
+  createdAt DateTime @default(now())
 }
 
 model Attendance {

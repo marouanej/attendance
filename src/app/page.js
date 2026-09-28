@@ -16,6 +16,8 @@ export default function Home() {
   const [attendance, setAttendance] = useState([]);
   const [pendingEnrollments, setPendingEnrollments] = useState([]);
   const [importMessage, setImportMessage] = useState("");
+  const [leaveDurations, setLeaveDurations] = useState({});
+  const [savingStatuses, setSavingStatuses] = useState({});
   const [qrDataUrl, setQrDataUrl] = useState("");
   const checkInUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/checkin`;
   useEffect(() => {
@@ -48,19 +50,24 @@ export default function Home() {
       if (cancelled) return;
       if (attendanceResponse.ok) {
         const data = await attendanceResponse.json();
-        setAgents((current) => [...new Map([...current, ...data.agents].map((agent) => [agent.id, agent])).values()]);
-        setAttendance((current) => [...new Map([...current, ...data.attendance].map((event) => [event.id, event])).values()]);
+        setAgents(data.agents);
+        setLeaveDurations((current) => ({ ...current, ...Object.fromEntries(data.agents.filter((agent) => agent.durationHours).map((agent) => [agent.id, String(agent.durationHours)])) }));
+        setAttendance(data.attendance);
       }
       if (enrollmentResponse.ok) setPendingEnrollments(await enrollmentResponse.json());
     }
     loadServerData().catch(() => {});
-    return () => { cancelled = true; };
+    const refreshTimer = window.setInterval(() => loadServerData().catch(() => {}), 60_000);
+    return () => { cancelled = true; window.clearInterval(refreshTimer); };
   }, [isAuthenticated]);
 
   const attendanceRows = agents.map((agent) => {
-    const event = attendance.find((item) => item.agentId === agent.id && new Date(item.timestamp).toDateString() === new Date().toDateString());
+    const event = attendance.find((item) => item.agentId === agent.id);
     const checkIn = event ? new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-";
-    return { ...agent, checkIn, checkOut: "-", distance: event?.distance, accuracy: event?.accuracy, status: event ? "Present" : "Not arrived", tone: event ? "green" : "gray", initials: agent.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() };
+    const dayStatus = event ? "PRESENT" : agent.dayStatus || "NOT_ARRIVED";
+    const statusLabels = { PRESENT: "Present", NOT_ARRIVED: "Not arrived", PERMISSION: "Permission", RECUPERATION: "Recuperation", ABSENT: "Absent" };
+    const tone = dayStatus === "PRESENT" ? "green" : dayStatus === "PERMISSION" ? "blue" : ["RECUPERATION", "ABSENT"].includes(dayStatus) ? "orange" : "gray";
+    return { ...agent, checkIn, checkOut: "-", distance: event?.distance, accuracy: event?.accuracy, dayStatus, status: statusLabels[dayStatus] || "Not arrived", statusLabel: statusLabels[dayStatus] || "Not arrived", tone, initials: agent.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() };
   });
 
   function importAgents(event) {
@@ -94,7 +101,7 @@ export default function Home() {
   }
 
   function exportCsv() {
-    const csv = ["Agent,Department,Check in,Check out,Status,Distance from office (m),GPS accuracy (m)", ...attendanceRows.map((row) => `${row.name},${row.team},${row.checkIn},${row.checkOut},${row.status},${row.distance === undefined ? "" : Math.round(row.distance)},${row.accuracy ?? ""}`)].join("\n");
+    const csv = ["Agent,Department,Check in,Check out,Status,Distance from office (m),GPS accuracy (m)", ...attendanceRows.map((row) => `${row.name},${row.team},${row.checkIn},${row.checkOut},${row.statusLabel},${row.distance === undefined ? "" : Math.round(row.distance)},${row.accuracy ?? ""}`)].join("\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     link.download = `attendance-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -133,6 +140,27 @@ export default function Home() {
     setImportMessage("Agent approved. They can now check in with their passkey.");
   }
 
+  async function setAgentDayStatus(employeeId, status, selectedDurationHours) {
+    if (!status) return;
+    setSavingStatuses((current) => ({ ...current, [employeeId]: true }));
+    const durationHours = Number(selectedDurationHours || leaveDurations[employeeId] || 24);
+    try {
+      const response = await fetch(`/api/admin/agents/${employeeId}/day-status`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status, durationHours }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to update agent status.");
+      setAgents((current) => current.map((agent) => agent.id === employeeId ? { ...agent, dayStatus: data.status, validUntil: data.validUntil, durationHours: data.durationHours } : agent));
+      setImportMessage(`${status === "PERMISSION" ? "Permission" : status === "RECUPERATION" ? "Recuperation" : "Absent"} status saved for ${attendanceRows.find((row) => row.id === employeeId)?.name || "agent"}.`);
+    } catch (error) {
+      setImportMessage(error.message || "Unable to update agent status.");
+    } finally {
+      setSavingStatuses((current) => ({ ...current, [employeeId]: false }));
+    }
+  }
+
   function printQr() {
     if (!qrDataUrl) return;
     const printWindow = window.open("", "attendance-qr-print", "width=800,height=900");
@@ -167,11 +195,13 @@ export default function Home() {
           {pendingEnrollments.length > 0 && <section className="panel pending-enrollments"><div className="panel-header"><div><h2>Pending agent approvals</h2><p>Verify the person in person against official ID before activation.</p></div><span className="live-badge">{pendingEnrollments.length} waiting</span></div><div className="activity-list">{pendingEnrollments.map((enrollment) => <div key={enrollment.id}><span className="activity-icon blue-icon">♙</span><p><strong>{enrollment.name}</strong><small>{enrollment.rosterId ? `Roster ID ${enrollment.rosterId}` : "New agent enrollment"} · passkey registered · {new Date(enrollment.createdAt).toLocaleString()}</small></p><button className="button button-primary approve-button" onClick={() => approveEnrollment(enrollment.id)}>Approve</button></div>)}</div></section>}
 
           <section className="stats-grid" aria-label="Attendance summary">
-            <div className="stat-card"><div className="stat-top"><span>Arrived today</span><span className="stat-icon green-icon">✓</span></div><strong>{attendanceRows.filter((row) => row.status === "Present").length}<span className="stat-denom"> / {agents.length}</span></strong><div className="stat-foot">Recorded from verified scans</div></div>
+            <div className="stat-card"><div className="stat-top"><span>Arrived today</span><span className="stat-icon green-icon">✓</span></div><strong>{attendanceRows.filter((row) => row.dayStatus === "PRESENT").length}<span className="stat-denom"> / {agents.length}</span></strong><div className="stat-foot">Recorded from verified scans</div></div>
             <div className="stat-card"><div className="stat-top"><span>Agents imported</span><span className="stat-icon blue-icon">♙</span></div><strong>{agents.length}</strong><div className="stat-foot">Registered in workspace</div></div>
-            <div className="stat-card"><div className="stat-top"><span>Waiting to arrive</span><span className="stat-icon orange-icon">◷</span></div><strong>{agents.length - attendanceRows.filter((row) => row.status === "Present").length}</strong><div className="stat-foot">No arrival recorded yet</div></div>
+            <div className="stat-card"><div className="stat-top"><span>Waiting to arrive</span><span className="stat-icon orange-icon">◷</span></div><strong>{agents.length - attendanceRows.filter((row) => row.dayStatus === "PRESENT").length}</strong><div className="stat-foot">Not yet checked in</div></div>
             <div className="stat-card"><div className="stat-top"><span>GPS verified</span><span className="stat-icon violet-icon">↗</span></div><strong>{attendance.length ? "100" : "0"}<span className="percent">%</span></strong><div className="stat-foot">Server-side location check</div></div>
           </section>
+
+          <section className="panel day-status-panel"><div className="panel-header"><div><h2>Non-arrival status</h2><p>Set permission, recuperation, or absent for employees who have not checked in.</p></div></div><div className="day-status-list">{attendanceRows.filter((row) => row.dayStatus !== "PRESENT").length ? attendanceRows.filter((row) => row.dayStatus !== "PRESENT").map((row) => <div className="day-status-row" key={row.id}><div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}{row.validUntil && ["PERMISSION", "RECUPERATION"].includes(row.dayStatus) ? ` · ${row.durationHours || leaveDurations[row.id] || 24} hours, until ${new Date(row.validUntil).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}` : ""}</small></div><select aria-label={`Status for ${row.name}`} value={["PERMISSION", "RECUPERATION", "ABSENT"].includes(row.dayStatus) ? row.dayStatus : ""} disabled={savingStatuses[row.id]} onChange={(event) => setAgentDayStatus(row.id, event.target.value)}><option value="" disabled>Choose status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>{["PERMISSION", "RECUPERATION"].includes(row.dayStatus) && <select aria-label={`Duration for ${row.name}`} value={leaveDurations[row.id] || String(row.durationHours || 24)} disabled={savingStatuses[row.id]} onChange={(event) => { const durationHours = event.target.value; setLeaveDurations((current) => ({ ...current, [row.id]: durationHours })); setAgentDayStatus(row.id, row.dayStatus, durationHours); }}><option value="24">24 hours</option><option value="72">72 hours</option><option value="96">4 days</option></select>}</div>) : <p className="empty-cell">Everyone has checked in.</p>}</div></section>
 
           <div className="dashboard-grid">
             <section className="panel attendance-panel"><div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan.</p></div></div><div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div><div className="table-scroll"><table><thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th></tr></thead><tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.name}><td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td><td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td><td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td><td><span className={`status-pill ${row.tone}`}>{row.status}</span></td></tr>) : <tr><td colSpan="4" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody></table></div></section>

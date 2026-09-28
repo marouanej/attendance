@@ -4,6 +4,7 @@ import { getOfficeConfig } from "../../../../lib/config";
 import { validateCoordinates } from "../../../../lib/geofence";
 import { verifyOfficeNetwork } from "../../../../lib/network-verification";
 import { getEmployeeSession, isSameOriginRequest } from "../../../../lib/session";
+import { getCasablancaHour } from "../../../../lib/casablanca-time";
 
 export async function POST(request) {
   if (!isSameOriginRequest(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
@@ -14,6 +15,7 @@ export async function POST(request) {
   try {
     const employee = await prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, active: true } });
     if (!employee?.active) return NextResponse.json({ error: "This agent is not active." }, { status: 403 });
+    if (getCasablancaHour() >= 18) return NextResponse.json({ error: "Today's check-in window closed at 18:00 Casablanca time." }, { status: 403 });
     const office = getOfficeConfig();
     const location = validateCoordinates(body.location || {}, {
       latitude: office.officeLatitude,

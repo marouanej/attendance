@@ -6,6 +6,15 @@
 .pending-enrollments .activity-list p { flex: 1; min-width: 0; line-height: 1.5; }
 .pending-enrollments .activity-list small { overflow-wrap: anywhere; }
 .approve-button { flex-shrink: 0; padding: 8px 12px; }
+.day-status-panel { margin-bottom: 22px; }
+.day-status-list { max-height: 360px; overflow-y: auto; border-top: 1px solid #f3f3f5; padding: 0 20px; }
+.day-status-row { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 9px 0; border-bottom: 1px solid #f3f3f5; }
+.day-status-agent { flex: 1; min-width: 120px; }
+.day-status-agent strong, .day-status-agent small { display: block; }
+.day-status-agent strong { color: #4c4d59; font-size: 11px; }
+.day-status-agent small { color: #999aa6; font-size: 9px; margin-top: 4px; }
+.day-status-row select { min-width: 132px; max-width: 170px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #575866; padding: 8px 9px; font-size: 10px; }
+@media (max-width: 560px) { .day-status-list { padding: 0 12px; }.day-status-row { flex-wrap: wrap; }.day-status-agent { flex-basis: 100%; }.day-status-row select { flex: 1; min-width: 0; } }
 
 :root { --ink: #20212a; --muted: #8c8d9a; --line: #ececf2; --purple: #6457e8; --soft-purple: #f1efff; --green: #35b77a; --orange: #efaa4f; --paper: #fbfbfd; }
 * { box-sizing: border-box; }
