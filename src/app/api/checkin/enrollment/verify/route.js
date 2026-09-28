@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { prisma } from "../../../../../lib/prisma";
-import { appConfig, getOfficeConfig } from "../../../../../lib/config";
-import { validateCoordinates } from "../../../../../lib/geofence";
+import { appConfig } from "../../../../../lib/config";
 import { isSameOriginRequest } from "../../../../../lib/session";
-import { verifyOfficeNetwork } from "../../../../../lib/network-verification";
 
 export async function POST(request) {
   if (!isSameOriginRequest(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
@@ -20,24 +18,6 @@ export async function POST(request) {
     if (!challenge || !["ENROLLMENT", "CREDENTIAL_ENROLLMENT"].includes(challenge.purpose) || challenge.consumedAt || challenge.expiresAt <= new Date()) {
       return NextResponse.json({ error: "Enrollment expired. Start again." }, { status: 400 });
     }
-
-    const office = getOfficeConfig();
-    const location = validateCoordinates(body.location || {}, {
-      latitude: office.officeLatitude,
-      longitude: office.officeLongitude,
-      radius: office.geofenceRadius,
-      maxAccuracy: office.maxGpsAccuracy,
-    });
-    if (!location.ok) {
-      return NextResponse.json({ error: location.reason === "OUTSIDE_GEOFENCE" ? "You must be at the office to enroll." : "Precise location is required to enroll." }, { status: 403 });
-    }
-    const network = await verifyOfficeNetwork({
-      request,
-      mode: office.networkMode,
-      verifierUrl: process.env.LOCAL_NETWORK_VERIFIER_URL,
-      verifierSecret: process.env.LOCAL_NETWORK_VERIFIER_SECRET,
-    });
-    if (network.required && !network.verified) return NextResponse.json({ error: "Office network verification failed." }, { status: 403 });
 
     const verification = await verifyRegistrationResponse({
       response: body.response,
@@ -80,7 +60,7 @@ export async function POST(request) {
           data: {
             event: "AGENT_CREDENTIAL_PENDING",
             employeeId: imported.id,
-            metadata: { fullName, locationVerified: true, networkVerified: network.verified, distanceFromOffice: location.distance, gpsAccuracy: location.accuracy },
+              metadata: { fullName },
           },
         });
         return imported;
@@ -116,7 +96,7 @@ export async function POST(request) {
         data: {
           event: "AGENT_ENROLLMENT_PENDING",
           employeeId: created.employee.id,
-          metadata: { fullName, locationVerified: true, networkVerified: network.verified, distanceFromOffice: location.distance, gpsAccuracy: location.accuracy },
+          metadata: { fullName },
         },
       });
       return created.employee;

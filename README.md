@@ -15,9 +15,8 @@ When an agent scans the permanent QR code:
 
 1. They enter their full name. Imported agents are looked up in PostgreSQL; an unknown name starts enrollment.
 2. The phone creates a platform passkey with biometric or secure-screen-lock verification. The server verifies the WebAuthn response and stores the public key, never biometric data.
-3. The phone sends precise GPS coordinates. The server enforces the configured office geofence and accuracy limit.
-4. A new agent, or an imported agent binding their first passkey, remains inactive until an administrator verifies their identity and approves the enrollment.
-5. Approved agents authenticate with their passkey on later scans. The server records attendance time and verified location in PostgreSQL.
+3. A new agent, or an imported agent binding their first passkey, remains inactive until an administrator verifies their identity and approves the enrollment. Enrollment does not request location.
+4. On attendance check-in, the approved agent authenticates with their passkey and sends precise GPS coordinates. The server enforces the configured office geofence and accuracy limit, then records the time, location, and distance from the office in PostgreSQL.
 
 CSV imports, pending approvals, passkeys, and server-backed attendance use PostgreSQL. The browser may still contain older demo data in local storage; it is not used to authenticate server-backed agents. Configure a reachable PostgreSQL database before using enrollment or attendance.
 

@@ -60,7 +60,7 @@ export default function Home() {
   const attendanceRows = agents.map((agent) => {
     const event = attendance.find((item) => item.agentId === agent.id && new Date(item.timestamp).toDateString() === new Date().toDateString());
     const checkIn = event ? new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-";
-    return { ...agent, checkIn, checkOut: "-", status: event ? "Present" : "Not arrived", tone: event ? "green" : "gray", initials: agent.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() };
+    return { ...agent, checkIn, checkOut: "-", distance: event?.distance, accuracy: event?.accuracy, status: event ? "Present" : "Not arrived", tone: event ? "green" : "gray", initials: agent.name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() };
   });
 
   function importAgents(event) {
@@ -94,7 +94,7 @@ export default function Home() {
   }
 
   function exportCsv() {
-    const csv = ["Agent,Department,Check in,Check out,Status,GPS accuracy", ...attendanceRows.map((row) => `${row.name},${row.team},${row.checkIn},${row.checkOut},${row.status},${attendance.find((event) => event.agentId === row.id)?.accuracy || ""}`)].join("\n");
+    const csv = ["Agent,Department,Check in,Check out,Status,Distance from office (m),GPS accuracy (m)", ...attendanceRows.map((row) => `${row.name},${row.team},${row.checkIn},${row.checkOut},${row.status},${row.distance === undefined ? "" : Math.round(row.distance)},${row.accuracy ?? ""}`)].join("\n");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     link.download = `attendance-${new Date().toISOString().slice(0, 10)}.csv`;
@@ -164,7 +164,7 @@ export default function Home() {
 
           {importMessage && <div className="import-message">{importMessage}</div>}
 
-          {pendingEnrollments.length > 0 && <section className="panel pending-enrollments"><div className="panel-header"><div><h2>Pending agent approvals</h2><p>Verify the person in person against official ID before activation.</p></div><span className="live-badge">{pendingEnrollments.length} waiting</span></div><div className="activity-list">{pendingEnrollments.map((enrollment) => <div key={enrollment.id}><span className="activity-icon blue-icon">♙</span><p><strong>{enrollment.name}</strong><small>{enrollment.rosterId ? `Roster ID ${enrollment.rosterId}` : "New agent enrollment"} · passkey registered · office location verified · {new Date(enrollment.createdAt).toLocaleString()}</small></p><button className="button button-primary approve-button" onClick={() => approveEnrollment(enrollment.id)}>Approve</button></div>)}</div></section>}
+          {pendingEnrollments.length > 0 && <section className="panel pending-enrollments"><div className="panel-header"><div><h2>Pending agent approvals</h2><p>Verify the person in person against official ID before activation.</p></div><span className="live-badge">{pendingEnrollments.length} waiting</span></div><div className="activity-list">{pendingEnrollments.map((enrollment) => <div key={enrollment.id}><span className="activity-icon blue-icon">♙</span><p><strong>{enrollment.name}</strong><small>{enrollment.rosterId ? `Roster ID ${enrollment.rosterId}` : "New agent enrollment"} · passkey registered · {new Date(enrollment.createdAt).toLocaleString()}</small></p><button className="button button-primary approve-button" onClick={() => approveEnrollment(enrollment.id)}>Approve</button></div>)}</div></section>}
 
           <section className="stats-grid" aria-label="Attendance summary">
             <div className="stat-card"><div className="stat-top"><span>Arrived today</span><span className="stat-icon green-icon">✓</span></div><strong>{attendanceRows.filter((row) => row.status === "Present").length}<span className="stat-denom"> / {agents.length}</span></strong><div className="stat-foot">Recorded from verified scans</div></div>
@@ -174,7 +174,7 @@ export default function Home() {
           </section>
 
           <div className="dashboard-grid">
-            <section className="panel attendance-panel"><div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan.</p></div></div><div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div><div className="table-scroll"><table><thead><tr><th>AGENT</th><th>ARRIVED</th><th>GPS</th><th>STATUS</th></tr></thead><tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.name}><td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td><td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td><td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.checkIn === "-" ? "-" : `${attendance.find((event) => event.agentId === row.id)?.accuracy || ""}m accuracy`}</td><td><span className={`status-pill ${row.tone}`}>{row.status}</span></td></tr>) : <tr><td colSpan="4" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody></table></div></section>
+            <section className="panel attendance-panel"><div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan.</p></div></div><div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div><div className="table-scroll"><table><thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th></tr></thead><tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.name}><td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td><td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td><td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td><td><span className={`status-pill ${row.tone}`}>{row.status}</span></td></tr>) : <tr><td colSpan="4" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody></table></div></section>
 
             <section className="panel qr-panel"><div className="panel-header"><div><h2>Office QR code</h2><p>Permanent check-in link</p></div></div><div className="qr-content"><div className="qr-code" aria-label="Permanent office check-in QR code">{qrDataUrl ? <Image src={qrDataUrl} alt="Scan to open office check-in" width={320} height={320} unoptimized /> : <span className="qr-loading">Generating QR...</span>}</div><p>Agents scan this code to open<br /><strong>the attendance page</strong></p><span className="qr-url">{checkInUrl}</span></div><button className="print-button" onClick={printQr} disabled={!qrDataUrl}><span>▣</span> Print QR code</button><p className="qr-footnote">This QR code does not change.</p></section>
           </div>
