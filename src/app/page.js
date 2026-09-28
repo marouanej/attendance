@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import QRCode from "qrcode";
 
@@ -272,44 +272,45 @@ export default function Home() {
             <div className="stat-card"><div className="stat-top"><span>GPS verified</span><span className="stat-icon violet-icon">↗</span></div><strong>{attendance.length ? "100" : "0"}<span className="percent">%</span></strong><div className="stat-foot">Server-side location check</div></div>
           </section>
 
-          <section className="panel day-status-panel">
-            <div className="panel-header"><div><h2>Non-arrival status</h2><p>Set permission, recuperation, or absent for employees who have not checked in. Issue setup codes for rostered agents without passkeys.</p></div></div>
-            <div className="day-status-list">
-              {attendanceRows.filter((row) => row.dayStatus !== "PRESENT").length ? attendanceRows.filter((row) => row.dayStatus !== "PRESENT").map((row) => {
+          <section className="panel all-agents-panel">
+            <div className="panel-header"><div><h2>All agents</h2><p>Manage every active agent, including arrivals. Permission and recuperation apply through the selected Casablanca date.</p></div><span className="live-badge">{attendanceRows.length} agents</span></div>
+            <div className="all-agents-scroll">
+              {attendanceRows.length ? attendanceRows.map((row) => {
                 const draft = statusDrafts[row.id];
                 const selectedStatus = draft?.status || (["PERMISSION", "RECUPERATION", "ABSENT"].includes(row.dayStatus) ? row.dayStatus : "");
                 const selectedDate = draft?.validThrough || row.validThrough || today;
-                return <div className="day-status-row" key={row.id}>
-                  <div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}{row.validThrough && ["PERMISSION", "RECUPERATION"].includes(row.dayStatus) ? ` · through ${row.validThrough}` : ""}</small></div>
-                  <select aria-label={`Status for ${row.name}`} value={selectedStatus} disabled={savingStatuses[row.id]} onChange={(event) => {
+                const isPresent = row.dayStatus === "PRESENT";
+                return <div className="all-agent-row" key={row.id}>
+                  <div className="all-agent-identity"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><div className="day-status-agent"><strong>{row.name}</strong><small>{row.team || "No department"}</small></div></div>
+                  <div className="all-agent-arrival"><span className={`status-pill ${row.tone}`}>{row.status}</span><small>{row.checkIn === "-" ? "No check-in" : `${row.checkIn} · ${Math.round(row.distance || 0)} m`}</small></div>
+                  <div className="all-agent-controls">
+                    {isPresent ? <span className="agent-arrived-note">Checked in today</span> : <><select aria-label={`Status for ${row.name}`} value={selectedStatus} disabled={savingStatuses[row.id]} onChange={(event) => {
                     const status = event.target.value;
                     if (status === "ABSENT") setAgentDayStatus(row.id, status);
                     else setStatusDrafts((current) => ({ ...current, [row.id]: { status, validThrough: row.validThrough || today } }));
-                  }}><option value="" disabled>Choose status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>
-                  {["PERMISSION", "RECUPERATION"].includes(selectedStatus) && <><label className="date-label">Through<input aria-label={`Permission or recuperation end date for ${row.name}`} type="date" min={today} value={selectedDate} disabled={savingStatuses[row.id]} onChange={(event) => setStatusDrafts((current) => ({ ...current, [row.id]: { status: selectedStatus, validThrough: event.target.value } }))} /></label><button className="button button-primary" disabled={savingStatuses[row.id] || !selectedDate} onClick={() => setAgentDayStatus(row.id, selectedStatus, selectedDate)}>{savingStatuses[row.id] ? "Saving..." : "Save dates"}</button></>}
-                  {row.canIssueEnrollmentCode && <button className="button button-secondary enrollment-code-button" disabled={savingStatuses[row.id]} onClick={() => issueEnrollmentCode(row.id)}>{savingStatuses[row.id] ? "Issuing..." : "Issue setup code"}</button>}
-                  {enrollmentCodes[row.id] && <div className="issued-code"><code>{enrollmentCodes[row.id].code}</code><button className="button button-secondary" onClick={() => copyEnrollmentCode(row.id)}>Copy</button><small>Valid until {new Date(enrollmentCodes[row.id].expiresAt).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}. Give this code directly to the named employee.</small></div>}
+                    }}><option value="" disabled>Set status</option><option value="PERMISSION">Permission</option><option value="RECUPERATION">Recuperation</option><option value="ABSENT">Absent</option></select>
+                    {["PERMISSION", "RECUPERATION"].includes(selectedStatus) && <><label className="date-label">Through<input aria-label={`Permission or recuperation end date for ${row.name}`} type="date" min={today} value={selectedDate} disabled={savingStatuses[row.id]} onChange={(event) => setStatusDrafts((current) => ({ ...current, [row.id]: { status: selectedStatus, validThrough: event.target.value } }))} /></label><button className="button button-primary" disabled={savingStatuses[row.id] || !selectedDate} onClick={() => setAgentDayStatus(row.id, selectedStatus, selectedDate)}>{savingStatuses[row.id] ? "Saving..." : "Save dates"}</button></>}
+                    {row.canIssueEnrollmentCode && <button className="button button-secondary enrollment-code-button" disabled={savingStatuses[row.id]} onClick={() => issueEnrollmentCode(row.id)}>{savingStatuses[row.id] ? "Issuing..." : "Setup code"}</button>}</>}
+                    {enrollmentCodes[row.id] && <div className="issued-code"><code>{enrollmentCodes[row.id].code}</code><button className="button button-secondary" onClick={() => copyEnrollmentCode(row.id)}>Copy</button><small>Expires {new Date(enrollmentCodes[row.id].expiresAt).toLocaleString("en-GB", { timeZone: "Africa/Casablanca", dateStyle: "medium", timeStyle: "short" })}. Give this code privately to the agent.</small></div>}
+                    <div className="all-agent-actions"><button className="button button-secondary" disabled={savingStatuses[row.id]} onClick={() => editingAgentId === row.id ? setEditingAgentId(null) : beginAgentEdit(row)}>Edit</button><button className="button button-danger" disabled={savingStatuses[row.id]} onClick={() => removeAgent(row)}>Remove</button></div>
+                    {editingAgentId === row.id && <form className="agent-edit-form all-agent-edit" onSubmit={(event) => { event.preventDefault(); saveAgentEdit(row.id); }}><label>Name<input required maxLength={120} value={agentForm.name} onChange={(event) => setAgentForm((current) => ({ ...current, name: event.target.value }))} /></label><label>Department<input maxLength={120} value={agentForm.department} onChange={(event) => setAgentForm((current) => ({ ...current, department: event.target.value }))} /></label><button className="button button-primary" disabled={savingStatuses[row.id]}>{savingStatuses[row.id] ? "Saving..." : "Save"}</button><button className="button button-secondary" type="button" onClick={() => setEditingAgentId(null)}>Cancel</button></form>}
+                  </div>
                 </div>;
-              }) : <p className="empty-cell">Everyone has checked in.</p>}
+              }) : <p className="empty-cell">No agents yet. Import a CSV file to create your agent roster.</p>}
             </div>
           </section>
 
           <div className="dashboard-grid">
             <section className="panel attendance-panel">
-              <div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Arrivals appear after a verified QR scan. Edit or remove agents from the active roster.</p></div></div>
-              <div className="table-tools"><label className="search"><span>⌕</span><input placeholder="Search agents..." /></label></div>
+              <div className="panel-header"><div><h2>Today&apos;s attendance</h2><p>Verified arrivals and distance from the office.</p></div></div>
               <div className="table-scroll"><table>
-                <thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
-                <tbody>{attendanceRows.length ? attendanceRows.map((row) => <Fragment key={row.id}>
-                  <tr key={row.id}>
-                    <td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td>
-                    <td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td>
-                    <td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td>
-                    <td><span className={`status-pill ${row.tone}`}>{row.status}</span></td>
-                    <td className="agent-actions"><button className="button button-secondary" disabled={savingStatuses[row.id]} onClick={() => editingAgentId === row.id ? setEditingAgentId(null) : beginAgentEdit(row)}>Edit</button><button className="button button-danger" disabled={savingStatuses[row.id]} onClick={() => removeAgent(row)}>Remove</button></td>
-                  </tr>
-                  {editingAgentId === row.id && <tr key={`${row.id}-edit`}><td colSpan="5"><form className="agent-edit-form" onSubmit={(event) => { event.preventDefault(); saveAgentEdit(row.id); }}><label>Name<input required maxLength={120} value={agentForm.name} onChange={(event) => setAgentForm((current) => ({ ...current, name: event.target.value }))} /></label><label>Department<input maxLength={120} value={agentForm.department} onChange={(event) => setAgentForm((current) => ({ ...current, department: event.target.value }))} /></label><button className="button button-primary" disabled={savingStatuses[row.id]}>{savingStatuses[row.id] ? "Saving..." : "Save"}</button><button className="button button-secondary" type="button" onClick={() => setEditingAgentId(null)}>Cancel</button></form></td></tr>}
-                </Fragment>) : <tr><td colSpan="5" className="empty-cell">No agents yet. Import a CSV file to create your attendance list.</td></tr>}</tbody>
+                <thead><tr><th>AGENT</th><th>ARRIVED</th><th>DISTANCE</th><th>STATUS</th></tr></thead>
+                <tbody>{attendanceRows.length ? attendanceRows.map((row) => <tr key={row.id}>
+                  <td><div className="employee-cell"><span className={`avatar avatar-${row.tone}`}>{row.initials}</span><span><strong>{row.name}</strong><small>{row.team || "No department"}</small></span></div></td>
+                  <td className={row.checkIn === "-" ? "muted" : ""}>{row.checkIn}</td>
+                  <td className={row.checkIn === "-" ? "muted" : "gps-ok"}>{row.distance === undefined ? "-" : `${Math.round(row.distance)} m`}</td>
+                  <td><span className={`status-pill ${row.tone}`}>{row.status}</span></td>
+                </tr>) : <tr><td colSpan="4" className="empty-cell">No arrivals recorded today.</td></tr>}</tbody>
               </table></div>
             </section>
 

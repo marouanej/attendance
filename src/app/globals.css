@@ -6,9 +6,17 @@
 .pending-enrollments .activity-list p { flex: 1; min-width: 0; line-height: 1.5; }
 .pending-enrollments .activity-list small { overflow-wrap: anywhere; }
 .approve-button { flex-shrink: 0; padding: 8px 12px; }
-.day-status-panel { margin-bottom: 22px; }
-.day-status-list { max-height: 360px; overflow-y: auto; border-top: 1px solid #f3f3f5; padding: 0 20px; }
-.day-status-row { display: flex; align-items: center; gap: 10px; min-height: 58px; padding: 9px 0; border-bottom: 1px solid #f3f3f5; }
+.all-agents-panel { margin-bottom: 22px; }
+.all-agents-scroll { max-height: 560px; overflow-y: auto; border-top: 1px solid #f3f3f5; padding: 0 20px; }
+.all-agent-row { display: grid; grid-template-columns: minmax(190px, .9fr) minmax(140px, .55fr) minmax(360px, 1.8fr); align-items: center; gap: 14px; min-height: 72px; padding: 11px 0; border-bottom: 1px solid #f3f3f5; }
+.all-agent-identity { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.all-agent-arrival { display: grid; gap: 6px; justify-items: start; }
+.all-agent-arrival small, .agent-arrived-note { color: #898a96; font-size: 10px; }
+.all-agent-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.all-agent-controls > select { min-width: 128px; max-width: 152px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: #575866; padding: 8px 9px; font-size: 10px; }
+.all-agent-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.all-agent-edit { flex-basis: 100%; }
+.all-agent-controls .issued-code { flex-basis: 100%; }
 .day-status-agent { flex: 1; min-width: 120px; }
 .day-status-agent strong, .day-status-agent small { display: block; }
 .day-status-agent strong { color: #4c4d59; font-size: 11px; }
@@ -19,7 +27,8 @@
 .issued-code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-basis: 100%; padding: 10px; background: #f7f8fa; border: 1px solid var(--line); border-radius: 6px; }
 .issued-code code { color: #20212a; font-size: 12px; font-weight: 700; overflow-wrap: anywhere; }
 .issued-code small { flex-basis: 100%; color: #858694; font-size: 10px; line-height: 1.5; }
-@media (max-width: 560px) { .day-status-list { padding: 0 12px; }.day-status-row { flex-wrap: wrap; }.day-status-agent { flex-basis: 100%; }.day-status-row select { flex: 1; min-width: 0; } }
+@media (max-width: 900px) { .all-agent-row { grid-template-columns: minmax(160px, 1fr) minmax(120px, .6fr); }.all-agent-controls { grid-column: 1 / -1; padding-left: 40px; } }
+@media (max-width: 560px) { .all-agents-scroll { padding: 0 12px; }.all-agent-row { grid-template-columns: 1fr; gap: 8px; }.all-agent-controls { grid-column: auto; padding-left: 0; }.all-agent-controls > select { flex: 1; min-width: 0; }.all-agent-actions { margin-left: 0; } }
 .button-danger { border: 1px solid #f0d7d5; border-radius: 6px; background: #fff; color: #bd625c; padding: 8px 10px; font-size: 10px; font-weight: 700; }
 .agent-actions { display: flex; align-items: center; gap: 6px; }
 .agent-edit-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; padding: 10px 0; }
